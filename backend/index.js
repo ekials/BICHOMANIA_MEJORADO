@@ -7,6 +7,10 @@ const bcrypt = require('bcrypt');
 const excel = require('exceljs');
 const multer = require('multer');
 const path = require("path");
+const CarritoService = require("./src/application/CarritoService");
+const CarritoRepository = require("./src/infrastructure/persistence/CarritoRepository");
+const ErrorPersistencia = require("./src/application/ErrorPersistencia");
+const { ErrorValidacion, ErrorNoEncontrado } = require("./src/domain/errores");
 require('dotenv').config(); 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,6 +47,7 @@ const db = mysql.createPool({
   ssl: { rejectUnauthorized: false } 
 });
 module.exports = db;
+const carritoService = new CarritoService(new CarritoRepository(db.promise()));
 app.get('/', (req, res) => {
     res.send('Servidor funcionando.');
 });
@@ -531,274 +536,51 @@ app.get("/encuestas", (req, res) => {
         res.send(results);
     });
 });
-app.get("/carrito", (req, res) => {              
-    const id_cliente = req.query.id_cliente;
+const codigoHttpDeError = (error) => {
+    if (error instanceof ErrorValidacion) return 400;
+    if (error instanceof ErrorNoEncontrado) return 404;
+    return 500;
+};
 
-    if (!id_cliente) {
-        return res.status(400).send("Usuario no encontrado");
+const responderCarrito = (casoDeUso) => async (req, res) => {
+    try {
+        res.send(await casoDeUso(req));
+    } catch (error) {
+        const codigoHttp = codigoHttpDeError(error);
+        const mensaje = error instanceof ErrorPersistencia || codigoHttp !== 500
+            ? error.message
+            : "Error interno del servidor";
+        res.status(codigoHttp).send(mensaje);
     }
+};
 
-    const buscarCarrito = `
-        SELECT id_carrito FROM carritos
-        WHERE id_cliente = ? AND id_estado = 6
-        LIMIT 1
-    `;
+app.get("/carrito", responderCarrito((req) =>
+    carritoService.obtenerCarrito(req.query.id_cliente)
+));
 
-    db.query(buscarCarrito, [id_cliente], (err, results) => {
-        if (err) return res.status(500).send("Error al buscar carrito");
-
-        if (results.length === 0) {
-            return res.send({ mensaje: "No hay carrito creado" });
-        }
-
-        const id_carrito = results[0].id_carrito;
-
-        const consultaProductos = `
-            SELECT i.id_producto, i.cantidad, p.nombre, p.precio
-            FROM items_carrito i
-            JOIN productos p ON (i.id_producto = p.id_producto)
-            WHERE i.id_carrito = ?
-        `;
-
-        db.query(consultaProductos, [id_carrito], (err, productos) => {
-            if (err) return res.status(500).send("Error al recuperar productos");
-            res.send({id_carrito,productos});
-        });
-    });
-});
-app.post("/carrito/agregar", (req, res) => {
+app.post("/carrito/agregar", responderCarrito((req) => {
     const { id_cliente, id_producto, cantidad } = req.body;
+    return carritoService.agregarProducto(id_cliente, id_producto, cantidad);
+}));
 
-    if (!id_cliente || !id_producto || !cantidad) {
-        return res.status(400).send("Faltan datos");
-    }
-
-    const buscarCarrito = `
-        SELECT id_carrito FROM carritos
-        WHERE id_cliente = ? AND id_estado = 6
-        LIMIT 1
-    `;
-
-    db.query(buscarCarrito, [id_cliente], (err, results) => {
-        if (err) return res.status(500).send("Error al buscar carrito");
-
-        let idCarrito;
-
-        if (results.length === 0) {
-            const fecha = new Date().toISOString().slice(0, 10);
-
-            const crearCarrito = `
-                INSERT INTO carritos (fecha_creacion, id_cliente, id_estado)
-                VALUES (?, ?, 6)
-            `;
-
-            db.query(crearCarrito, [fecha, id_cliente], (err2, result2) => {
-                if (err2) return res.status(500).send("Error al crear carrito");
-
-                idCarrito = result2.insertId;
-                agregarProducto(idCarrito);
-            });
-        } else {
-            idCarrito = results[0].id_carrito;
-            agregarProducto(idCarrito);
-        }
-    });
-
-
-    function agregarProducto(id_carrito) {
-        const buscarItem = `
-            SELECT cantidad FROM items_carrito
-            WHERE id_carrito = ? AND id_producto = ?
-        `;
-
-        db.query(buscarItem, [id_carrito, id_producto], (err, results) => {
-            if (err) return res.status(500).send("Error al verificar item");
-
-            if (results.length > 0) {
-                const nuevaCantidad = results[0].cantidad + cantidad;
-                const actualizar = `
-                    UPDATE items_carrito
-                    SET cantidad = ?
-                    WHERE id_carrito = ? AND id_producto = ?
-                `;
-                db.query(actualizar, [nuevaCantidad, id_carrito, id_producto], (err2) => {
-                    if (err2) return res.status(500).send("Error al actualizar item");
-
-                    return res.send({
-                        mensaje: "Cantidad actualizada",
-                        id_carrito,
-                        nuevaCantidad
-                    });
-                });
-            } else {
-                const insertar = `
-                    INSERT INTO items_carrito (id_carrito, id_producto, cantidad)
-                    VALUES (?, ?, ?)
-                `;
-
-                db.query(insertar, [id_carrito, id_producto, cantidad], (err3) => {
-                    if (err3) return res.status(500).send("Error al agregar item");
-
-                    return res.send({
-                        mensaje: "Producto agregado al carrito",
-                        id_carrito,
-                        id_producto,
-                        cantidad
-                    });
-                });
-            }
-        });
-    }
-});
-app.put("/carrito/actualizar", (req, res) => {         
+app.put("/carrito/actualizar", responderCarrito((req) => {
     const { id_cliente, id_producto, cantidad } = req.body;
+    return carritoService.actualizarCantidad(id_cliente, id_producto, cantidad);
+}));
 
-    if (!id_cliente || !id_producto || cantidad == null) {
-        return res.status(400).send("Faltan datos");
-    }
-
-    if (cantidad < 0) {
-        return res.status(400).send("La cantidad no puede ser negativa");
-    }
-
-    const buscarCarrito = `
-        SELECT id_carrito FROM carritos
-        WHERE id_cliente = ? AND id_estado = 6
-        LIMIT 1
-    `;
-
-    db.query(buscarCarrito, [id_cliente], (err, results) => {
-        if (err) return res.status(500).send("Error al buscar carrito");
-
-        if (results.length === 0) {
-            return res.status(404).send("El cliente no tiene carrito activo");
-        }
-
-        const id_carrito = results[0].id_carrito;
-
-        if (cantidad === 0) {
-            const eliminarItem = `
-                DELETE FROM items_carrito
-                WHERE id_carrito = ? AND id_producto = ?
-            `;
-            db.query(eliminarItem, [id_carrito, id_producto], (err2) => {
-                if (err2) return res.status(500).send("Error al eliminar item");
-
-                return res.send({
-                    mensaje: "Producto eliminado del carrito",
-                    id_carrito,
-                    id_producto
-                });
-            });
-            return;
-        }
-
-        const actualizarCantidad = `
-            UPDATE items_carrito
-            SET cantidad = ?
-            WHERE id_carrito = ? AND id_producto = ?
-        `;
-
-        db.query(actualizarCantidad, [cantidad, id_carrito, id_producto], (err3, result3) => {
-            if (err3) return res.status(500).send("Error al actualizar producto");
-
-            if (result3.affectedRows === 0) {
-                return res.status(404).send("El producto no existe en el carrito");
-            }
-
-            return res.send({
-                mensaje: "Cantidad actualizada",
-                id_carrito,
-                id_producto,
-                cantidad
-            });
-        });
-    });
-});
-app.delete("/carrito/eliminar-item", (req, res) => {  
+app.delete("/carrito/eliminar-item", responderCarrito((req) => {
     const { id_cliente, id_producto } = req.body;
+    return carritoService.eliminarProducto(id_cliente, id_producto);
+}));
 
-    if (!id_cliente || !id_producto) {
-        return res.status(400).send("Faltan datos");
-    }
-
-    const buscarCarrito = `
-        SELECT id_carrito FROM carritos
-        WHERE id_cliente = ? AND id_estado = 6
-        LIMIT 1
-    `;
-
-    db.query(buscarCarrito, [id_cliente], (err, results) => {
-        if (err) return res.status(500).send("Error al buscar carrito");
-        if (results.length === 0) return res.status(404).send("No hay carrito activo");
-
-        const id_carrito = results[0].id_carrito;
-
-        const eliminar = `
-            DELETE FROM items_carrito
-            WHERE id_carrito = ? AND id_producto = ?
-        `;
-
-        db.query(eliminar, [id_carrito, id_producto], (err2, result2) => {
-            if (err2) return res.status(500).send("Error al eliminar producto");
-
-            return res.send({
-                mensaje: "Producto eliminado del carrito",
-                id_carrito,
-                id_producto
-            });
-        });
-    });
-});
-app.delete("/carrito/vaciar", (req, res) => { 
+app.delete("/carrito/vaciar", responderCarrito((req) => {
     const { id_cliente } = req.body;
+    return carritoService.vaciar(id_cliente);
+}));
 
-    if (!id_cliente) return res.status(400).send("Falta id_cliente");
-
-    const buscarCarrito = `
-        SELECT id_carrito FROM carritos
-        WHERE id_cliente = ? AND id_estado = 6
-        LIMIT 1
-    `;
-
-    db.query(buscarCarrito, [id_cliente], (err, results) => {
-        if (err) return res.status(500).send("Error al buscar carrito");
-        if (results.length === 0) return res.status(404).send("El cliente no tiene carrito activo");
-
-        const id_carrito = results[0].id_carrito;
-
-        const eliminarTodo = `
-            DELETE FROM items_carrito
-            WHERE id_carrito = ?
-        `;
-
-        db.query(eliminarTodo, [id_carrito], (err2) => {
-            if (err2) return res.status(500).send("Error al vaciar carrito");
-
-            return res.send({
-                mensaje: "Carrito vaciado correctamente",
-                id_carrito
-            });
-        });
-    });
-});
-
-app.get("/carrito/total", (req, res) => { 
-    const id_cliente = req.query.id_cliente;
-
-    const sql = `
-        SELECT SUM(i.cantidad * p.precio) AS total
-        FROM items_carrito i
-        JOIN productos p ON p.id_producto = i.id_producto
-        JOIN carritos c ON c.id_carrito = i.id_carrito
-        WHERE c.id_cliente = ? AND c.id_estado = 6
-    `;
-
-    db.query(sql, [id_cliente], (err, result) => {
-        if (err) return res.status(500).send("Error al calcular total");
-        res.send(result[0]);
-    });
-});
+app.get("/carrito/total", responderCarrito((req) =>
+    carritoService.calcularTotal(req.query.id_cliente)
+));
 app.post("/paises", (req, res) => {
   const { nombre } = req.body;
 
