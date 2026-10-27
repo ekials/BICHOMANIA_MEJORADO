@@ -39,7 +39,6 @@ describe("Entidad Producto", () => {
             expect(() => new Producto({ nombre: "   ", precio: 10 }))
                 .toThrow(ErrorValidacion);
         });
-
         test.each([0, -5, "abc", null, undefined, ""])(
             "rechaza el precio inválido: %p",
             (precio) => {
@@ -71,6 +70,8 @@ describe("Entidad Producto", () => {
             expect(() => producto.cambiarPrecio(-1)).toThrow(ErrorValidacion);
             expect(producto.precio).toBe(100);
         });
+    
+    
     });
 
     describe("aplicarDescuento", () => {
