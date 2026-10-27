@@ -13,50 +13,58 @@ export default function ResponderEncuestas() {
 
 
     const cargarEncuestas = async () => {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/encuestas-activas`);
-        const encuestasActivas = await res.json();
-
-        const filtradas = [];
-
-        for (const e of encuestasActivas) {
-            const resp = await fetch(`${process.env.REACT_APP_API_URL}/ya-voto/${idCliente}/${e.id_encuesta}`);
-            const data = await resp.json();
-
-            if (!data.yaVoto) {
-                filtradas.push(e);
-            }
+        if (!idCliente) {
+            setEncuestas([]);
+            return;
         }
-
-        setEncuestas(filtradas);
+        try {
+            const res = await fetch(`${process.env.REACT_APP_API_URL}/encuestas-activas?id_cliente=${idCliente}`);
+            if (!res.ok) throw new Error(await res.text());
+            setEncuestas(await res.json());
+        } catch (err) {
+            console.error("Error al cargar encuestas:", err);
+            setEncuestas([]);
+        }
     };
 
 
     const seleccionarEncuesta = async (encuesta) => {
-        setSeleccionada(encuesta);
-
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/detalles-encuesta/${encuesta.id_encuesta}`);
-
-        const data = await res.json();
-        setDetalles(data);
+        try {
+            const res = await fetch(`${process.env.REACT_APP_API_URL}/detalles-encuesta/${encuesta.id_encuesta}`);
+            if (!res.ok) throw new Error(await res.text());
+            setDetalles(await res.json());
+            setSeleccionada(encuesta);
+        } catch (err) {
+            alert(err.message || "No se pudieron cargar las opciones");
+        }
     };
 
 
     const votar = async (detalle) => {
-        await fetch(`${process.env.REACT_APP_API_URL}/votar`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                idCliente,
-                idEncuesta: seleccionada.id_encuesta,
-                idDetalle: detalle.id_detalle
-            })
-        });
+        try {
+            const res = await fetch(`${process.env.REACT_APP_API_URL}/votar`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    idCliente,
+                    idEncuesta: seleccionada.id_encuesta,
+                    idDetalle: detalle.id_detalle
+                })
+            });
 
-        setEncuestas(encuestas.filter(e => e.id_encuesta !== seleccionada.id_encuesta));
+            if (!res.ok) {
+                alert(await res.text());
+                cargarEncuestas();
+                setSeleccionada(null);
+                return;
+            }
 
-        setSeleccionada(null);
-
-        alert("¡Voto registrado!");
+            setEncuestas(encuestas.filter(e => e.id_encuesta !== seleccionada.id_encuesta));
+            setSeleccionada(null);
+            alert("¡Voto registrado!");
+        } catch (err) {
+            alert("No se pudo registrar el voto. Intenta de nuevo.");
+        }
     };
 
     return (
@@ -83,7 +91,7 @@ export default function ResponderEncuestas() {
                         >
                             <strong>{e.descripcion}</strong>
                             <br />
-                            <small>{e.fecha_inicio} → {e.fecha_fin}</small>
+                            <small>{String(e.fecha_inicio).slice(0, 10)} → {String(e.fecha_fin).slice(0, 10)}</small>
                         </li>
                     ))}
                 </ul>

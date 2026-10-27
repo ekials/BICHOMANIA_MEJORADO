@@ -39,8 +39,8 @@ export default function Encuestas() {
   const cargarEncuestas = async () => {
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/encuestas?id_empleado=${id_empleado}`);
-      const data = await res.json();
-      setEncuestas(data);
+      if (!res.ok) throw new Error(await res.text());
+      setEncuestas(await res.json());
     } catch (err) {
       console.error("Error al cargar encuestas:", err);
     }
@@ -103,6 +103,16 @@ export default function Encuestas() {
         o.categoria.trim()
     );
 
+    if (opcionesValidas.length < 2) {
+      return alert("La encuesta debe tener al menos 2 opciones");
+    }
+    if (!form.fecha_inicio || !form.fecha_fin || !form.descripcion.trim()) {
+      return alert("Completa fechas y descripción");
+    }
+    if (form.fecha_fin < form.fecha_inicio) {
+      return alert("La fecha de fin no puede ser anterior a la de inicio");
+    }
+
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/crear_encuesta`, {
         method: "POST",
@@ -112,6 +122,7 @@ export default function Encuestas() {
 
       const msg = await res.text();
       alert(msg);
+      if (!res.ok) return; // conserva el formulario para corregir
 
       setMostrarForm(false);
 
@@ -133,7 +144,7 @@ export default function Encuestas() {
     if (!window.confirm("¿Seguro deseas eliminar esta encuesta?")) return;
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/eliminar_encuesta/${id}`, {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/eliminar_encuesta/${id}?id_empleado=${id_empleado}`, {
         method: "DELETE"
       });
       const msg = await res.text();
@@ -150,7 +161,11 @@ export default function Encuestas() {
 
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/cerrar_encuesta/${id}`,
-        { method: "PUT" }
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id_empleado }),
+        }
       );
       const msg = await res.text();
       alert(msg);
@@ -163,10 +178,14 @@ export default function Encuestas() {
   const verGanadora = async (id_encuesta) => {
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/encuesta_ganadora/${id_encuesta}`);
+      if (!res.ok) return alert(await res.text());
       const data = await res.json();
 
       if (!data || !data.opcion) {
         return alert("No hay votos para esta encuesta");
+      }
+      if (data.empate) {
+        return alert(`Empate entre: ${data.empatadas.join(", ")} — Votos: ${data.votos}`);
       }
 
       alert(`Ganadora: ${data.opcion} — Votos: ${data.votos}`);
@@ -315,8 +334,8 @@ export default function Encuestas() {
               {encuestas.map((fila) => (
                 <tr key={fila.id_encuesta}>
                   <td>{fila.id_encuesta}</td>
-                  <td>{fila.fecha_inicio}</td>
-                  <td>{fila.fecha_fin}</td>
+                  <td>{String(fila.fecha_inicio).slice(0, 10)}</td>
+                  <td>{String(fila.fecha_fin).slice(0, 10)}</td>
                   <td>{fila.descripcion}</td>
                   <td>{fila.estado}</td>
 

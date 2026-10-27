@@ -54,6 +54,26 @@ const carritoService = new CarritoService(new CarritoRepository(db.promise()));
 const encuestaService = new EncuestaService(
   new EncuestaRepository(db.promise()),
 );
+
+const codigoHttpDeError = (error) => {
+  if (error instanceof ErrorValidacion) return 400;
+  if (error instanceof ErrorNoEncontrado) return 404;
+  return 500;
+};
+
+const responderCasoDeUso = (casoDeUso) => async (req, res) => {
+  try {
+    res.send(await casoDeUso(req));
+  } catch (error) {
+    const codigoHttp = codigoHttpDeError(error);
+    const mensaje =
+      error instanceof ErrorPersistencia || codigoHttp !== 500
+        ? error.message
+        : "Error interno del servidor";
+    res.status(codigoHttp).send(mensaje);
+  }
+};
+
 app.get("/", (req, res) => {
   res.send("Servidor funcionando.");
 });
@@ -431,17 +451,21 @@ app.get("/listas", (req, res) => {
 
 app.post(
   "/crear_encuesta",
-  responderCarrito((req) => encuestaService.crearEncuesta(req.body)),
+  responderCasoDeUso((req) => encuestaService.crearEncuesta(req.body)),
 );
 
 app.delete(
   "/eliminar_encuesta/:id",
-  responderCarrito((req) => encuestaService.eliminarEncuesta(req.params.id)),
+  responderCasoDeUso((req) =>
+    encuestaService.eliminarEncuesta(req.params.id, req.query.id_empleado),
+  ),
 );
 
 app.put(
   "/cerrar_encuesta/:id",
-  responderCarrito((req) => encuestaService.cerrarEncuesta(req.params.id)),
+  responderCasoDeUso((req) =>
+    encuestaService.cerrarEncuesta(req.params.id, req.body?.id_empleado),
+  ),
 );
 
 app.get("/clientes", (req, res) => {
@@ -456,45 +480,28 @@ app.get("/clientes", (req, res) => {
 
 app.get(
   "/encuestas-activas",
-  responderCarrito(() => encuestaService.listarActivas()),
+  responderCasoDeUso((req) =>
+    encuestaService.listarActivas(req.query.id_cliente),
+  ),
 );
 
 app.get(
   "/encuestas",
-  responderCarrito((req) =>
+  responderCasoDeUso((req) =>
     encuestaService.listarPorEmpleado(req.query.id_empleado),
   ),
 );
 
-const codigoHttpDeError = (error) => {
-  if (error instanceof ErrorValidacion) return 400;
-  if (error instanceof ErrorNoEncontrado) return 404;
-  return 500;
-};
-
-const responderCarrito = (casoDeUso) => async (req, res) => {
-  try {
-    res.send(await casoDeUso(req));
-  } catch (error) {
-    const codigoHttp = codigoHttpDeError(error);
-    const mensaje =
-      error instanceof ErrorPersistencia || codigoHttp !== 500
-        ? error.message
-        : "Error interno del servidor";
-    res.status(codigoHttp).send(mensaje);
-  }
-};
-
 app.get(
   "/carrito",
-  responderCarrito((req) =>
+  responderCasoDeUso((req) =>
     carritoService.obtenerCarrito(req.query.id_cliente),
   ),
 );
 
 app.post(
   "/carrito/agregar",
-  responderCarrito((req) => {
+  responderCasoDeUso((req) => {
     const { id_cliente, id_producto, cantidad } = req.body;
     return carritoService.agregarProducto(id_cliente, id_producto, cantidad);
   }),
@@ -502,7 +509,7 @@ app.post(
 
 app.put(
   "/carrito/actualizar",
-  responderCarrito((req) => {
+  responderCasoDeUso((req) => {
     const { id_cliente, id_producto, cantidad } = req.body;
     return carritoService.actualizarCantidad(id_cliente, id_producto, cantidad);
   }),
@@ -510,7 +517,7 @@ app.put(
 
 app.delete(
   "/carrito/eliminar-item",
-  responderCarrito((req) => {
+  responderCasoDeUso((req) => {
     const { id_cliente, id_producto } = req.body;
     return carritoService.eliminarProducto(id_cliente, id_producto);
   }),
@@ -518,7 +525,7 @@ app.delete(
 
 app.delete(
   "/carrito/vaciar",
-  responderCarrito((req) => {
+  responderCasoDeUso((req) => {
     const { id_cliente } = req.body;
     return carritoService.vaciar(id_cliente);
   }),
@@ -526,7 +533,7 @@ app.delete(
 
 app.get(
   "/carrito/total",
-  responderCarrito((req) => carritoService.calcularTotal(req.query.id_cliente)),
+  responderCasoDeUso((req) => carritoService.calcularTotal(req.query.id_cliente)),
 );
 app.post("/paises", (req, res) => {
   const { nombre } = req.body;
@@ -1034,7 +1041,7 @@ app.get("/compras/:id_cliente", async (req, res) => {
 
 app.post(
   "/votar",
-  responderCarrito((req) => {
+  responderCasoDeUso((req) => {
     const { idCliente, idEncuesta, idDetalle } = req.body;
     return encuestaService.votar(idCliente, idEncuesta, idDetalle);
   }),
@@ -1042,19 +1049,19 @@ app.post(
 
 app.get(
   "/ya-voto/:idCliente/:idEncuesta",
-  responderCarrito((req) =>
+  responderCasoDeUso((req) =>
     encuestaService.yaVoto(req.params.idCliente, req.params.idEncuesta),
   ),
 );
 
 app.get(
   "/detalles-encuesta/:id",
-  responderCarrito((req) => encuestaService.obtenerDetalles(req.params.id)),
+  responderCasoDeUso((req) => encuestaService.obtenerDetalles(req.params.id)),
 );
 
 app.get(
   "/encuesta_ganadora/:id_encuesta",
-  responderCarrito((req) =>
+  responderCasoDeUso((req) =>
     encuestaService.obtenerGanadora(req.params.id_encuesta),
   ),
 );

@@ -28,8 +28,8 @@ function App() {
           <Route path="/registro" element={<Registro />} />
           <Route path="/productos" element={<Productos />} />
           <Route path="/profile" element={ <RequireAuth> <Profile /> </RequireAuth>} /> 
-          <Route path="/encuestas" element={<Encuesta/>} /> 
-          <Route path="/responder-encuestas" element={<ResponderEncuestas />} />
+          <Route path="/encuestas" element={<RequireAuth roles={["empleado"]}><Encuesta/></RequireAuth>} /> 
+          <Route path="/responder-encuestas" element={<RequireAuth roles={["cliente"]}><ResponderEncuestas /></RequireAuth>} />
           <Route path="/pedidos" element={<Pedido/>} /> 
           <Route path="/resenas/:id" element={<Resena/>} />
           <Route path="/deudas" element={<Deuda/>} />
