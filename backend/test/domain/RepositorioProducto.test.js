@@ -22,7 +22,11 @@ describe("RepositorioProducto", () => {
         await expect(repositorio[nombreMetodo]()).rejects.toThrow(`Método no implementado: ${nombreMetodo}`);
     });
 
-    test("Una subclase puede implementar un método sin afectar a los demás", async () => {
+
+
+
+
+    test("una    subclase puede implementar un método sin afectar a los demás", async () => {
         class RepositorioParcial extends RepositorioProducto {
             async buscarPorId(id) {
                 return { id };
